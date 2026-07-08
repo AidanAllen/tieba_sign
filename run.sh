@@ -60,4 +60,5 @@ python3 -m playwright install chromium
 
 # ---- 5. 运行签到 ----
 info "开始执行签到..."
-python3 tieba_sign.py "$@"
+JSON_FILE="log/tieba_stats_$(date +%Y-%m-%d).json"
+python3 tieba_sign.py --quiet --json-stats "$JSON_FILE" "$@"

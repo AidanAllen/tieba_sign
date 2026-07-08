@@ -142,27 +142,32 @@ class TiebaSigner:
     # ====================== 浏览器操作 ======================
 
     async def _fetch_html(self, page, url: str) -> str:
-        try:
-            await page.goto(url, wait_until="domcontentloaded", timeout=60000)
-            if "passport.baidu.com" in page.url:
-                self._cookie_expired.set()
-                self.logger.error("❌ Cookie 已失效，被重定向到登录页")
-                return ""
+        for attempt in range(1, 3):
             try:
-                await page.wait_for_function(
-                    "document.querySelector('a[href*=\"/f?kw=\"]') "
-                    "|| document.querySelector('a[href*=\"mylike?&pn=\"]') "
-                    "|| document.body.innerText.includes('尾页') "
-                    "|| document.body.innerText.includes('下一页')",
-                    timeout=20000,
-                )
-            except Exception:
-                pass
-            await asyncio.sleep(1)
-            return await page.content()
-        except Exception as e:
-            self.logger.warning(f"❌ 页面加载失败：{url[:60]} - {e}")
-            return ""
+                await page.goto(url, wait_until="domcontentloaded", timeout=120000)
+                if "passport.baidu.com" in page.url:
+                    self._cookie_expired.set()
+                    self.logger.error("❌ Cookie 已失效，被重定向到登录页")
+                    return ""
+                try:
+                    await page.wait_for_function(
+                        "document.querySelector('a[href*=\"/f?kw=\"]') "
+                        "|| document.querySelector('a[href*=\"mylike?&pn=\"]') "
+                        "|| document.body.innerText.includes('尾页') "
+                        "|| document.body.innerText.includes('下一页')",
+                        timeout=30000,
+                    )
+                except Exception:
+                    pass
+                await asyncio.sleep(1)
+                return await page.content()
+            except Exception as e:
+                self.logger.warning(f"❌ 页面加载失败（第 {attempt} 次）：{url[:60]} - {e}")
+                if attempt < 2:
+                    wait = random.randint(5, 15)
+                    self.logger.info(f"⏳ 等待 {wait} 秒后重试...")
+                    await asyncio.sleep(wait)
+        return ""
 
     async def _fetch_api(self, page, url: str, data: dict = None) -> dict:
         try:
