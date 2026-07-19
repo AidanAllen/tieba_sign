@@ -95,6 +95,7 @@ class TiebaSigner:
         self.success = 0
         self.fail_list: list[str] = []
         self._cookie_expired = asyncio.Event()
+        self._list_timeout = False
 
     def _resolve_config(self) -> dict:
         """合并 .env → 默认值，.env 中配置的值会覆盖代码默认值"""
@@ -163,6 +164,7 @@ class TiebaSigner:
                 return await page.content()
             except Exception as e:
                 self.logger.warning(f"❌ 页面加载失败（第 {attempt} 次）：{url[:60]} - {e}")
+                self._list_timeout = True
                 if attempt < 2:
                     wait = random.randint(5, 15)
                     self.logger.info(f"⏳ 等待 {wait} 秒后重试...")
@@ -437,6 +439,9 @@ class TiebaSigner:
 
     def _write_lock(self):
         """写入今天的日期到 .lock 文件"""
+        if self._list_timeout:
+            self.logger.info("⏳ 列表请求存在超时，跳过生成 .lock，下次可继续获取完整列表")
+            return
         try:
             with open(LOCK_FILE, "w") as f:
                 f.write(datetime.now().strftime("%Y-%m-%d"))
