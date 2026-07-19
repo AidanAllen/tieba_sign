@@ -5,3 +5,5 @@
 !/.venv/
 !/log/
 /.lock
+/.junie/
+/.agents/

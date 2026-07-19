@@ -33,6 +33,10 @@ _DEFAULTS = {
     "delay_max": 3.0,
     "json_stats": "",
     "quiet": False,
+    "proxy_enabled": False,
+    "proxy_api_url": "https://proxy.scdn.io/api/get_proxy.php",
+    "proxy_protocol": "all",
+    "proxy_country_code": "",
 }
 
 # .env 键名 → 内部配置键名 + 类型转换器
@@ -44,6 +48,10 @@ _ENV_MAP = {
     "DELAY_MAX": ("delay_max", float),
     "JSON_STATS": ("json_stats", str),
     "QUIET": ("quiet", bool),
+    "PROXY_ENABLED": ("proxy_enabled", bool),
+    "PROXY_API_URL": ("proxy_api_url", str),
+    "PROXY_PROTOCOL": ("proxy_protocol", str),
+    "PROXY_COUNTRY_CODE": ("proxy_country_code", str),
 }
 
 
@@ -180,23 +188,59 @@ class TiebaSigner:
             return {"error": str(e)}
 
     async def _launch_browser(self, pw, cookies):
-        self.logger.info("🚀 正在启动 Chromium...")
+        self.logger.info('🚀 正在启动 Chromium...')
+        proxy_addr = self._fetch_proxy()
+        launch_args = ['--no-sandbox', '--disable-setuid-sandbox']
+        new_context_kw = {}
+        if proxy_addr:
+            new_context_kw['proxy'] = {'server': f'http://{proxy_addr}'}
+            self.logger.info(f'🌐 Chromium 已配置代理 {proxy_addr}')
+        else:
+            launch_args.append('--no-proxy-server')
+
         browser = await pw.chromium.launch(
             headless=True,
-            args=["--no-sandbox", "--disable-setuid-sandbox", "--no-proxy-server"],
+            args=launch_args,
         )
         context = await browser.new_context(
             user_agent=(
-                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-                "AppleWebKit/537.36 (KHTML, like Gecko) "
-                "Chrome/149.0.0.0 Safari/537.36"
+                'Mozilla/5.0 (Windows NT 10.0; Win64; x64) '
+                'AppleWebKit/537.36 (KHTML, like Gecko) '
+                'Chrome/149.0.0.0 Safari/537.36'
             ),
-            locale="zh-CN",
+            locale='zh-CN',
+            **new_context_kw,
         )
         await context.add_cookies(cookies)
         page = await context.new_page()
-        self.logger.info("✅ Chromium 启动完成，Cookie 已注入")
+        self.logger.info('✅ Chromium 启动完成，Cookie 已注入')
         return browser, context, page
+
+    # ====================== 代理池 ======================
+
+    def _fetch_proxy(self) -> str | None:
+        '''从代理池 API 获取一个代理 IP，返回 ip:port 或 None'''
+        if not self.cfg.get('proxy_enabled'):
+            return None
+        api_url = self.cfg['proxy_api_url']
+        protocol = self.cfg['proxy_protocol']
+        params = {'protocol': protocol, 'count': 1}
+        country_code = self.cfg.get('proxy_country_code', '')
+        if country_code:
+            params['country_code'] = country_code
+        try:
+            resp = requests.get(api_url, params=params, timeout=10)
+            data = resp.json()
+            if data.get('code') == 200:
+                proxies = data.get('data', {}).get('proxies', [])
+                if proxies:
+                    proxy = proxies[0]
+                    self.logger.info(f'🌐 从代理池获取代理：{proxy}（协议筛选：{protocol}）')
+                    return proxy
+            self.logger.warning('⚠️ 代理池返回异常：' + str(data.get('message', data)))
+        except Exception as e:
+            self.logger.warning('⚠️ 获取代理失败：' + str(e))
+        return None
 
     # ====================== 获取贴吧列表 ======================
 
