@@ -4,3 +4,4 @@
 !/.reasonix/
 !/.venv/
 !/log/
+/.lock
